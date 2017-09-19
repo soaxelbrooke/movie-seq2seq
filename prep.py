@@ -131,6 +131,8 @@ def prep():
 
     print("Writing development data to data/develop/...")
     for movie_id in develop_movie_ids:
+        if len(movie_in_data[movie_id]) == 0:
+            continue
         with open('data/develop/{}_in.txt'.format(movie_id.decode()), 'wb') as outfile:
             outfile.write(b'\n'.join(movie_in_data[movie_id]))
         with open('data/develop/{}_out.txt'.format(movie_id.decode()), 'wb') as outfile:
@@ -138,6 +140,8 @@ def prep():
 
     print("Writing heldout data to data/heldout/...")
     for movie_id in heldout_movie_ids:
+        if len(movie_in_data[movie_id]) == 0:
+            continue
         with open('data/heldout/{}_in.txt'.format(movie_id.decode()), 'wb') as outfile:
             outfile.write(b'\n'.join(movie_in_data[movie_id]))
         with open('data/heldout/{}_out.txt'.format(movie_id.decode()), 'wb') as outfile:
