@@ -23,7 +23,7 @@ from sklearn.model_selection import StratifiedKFold
 
 pct_heldout = 0.10
 
-DELIM = '+++$+++'
+DELIM = b'+++$+++'
 
 Utterance = namedtuple('Utterance', 
     ('utterance_id', 'character_id', 'movie_id', 'character_name', 'text'))
@@ -36,13 +36,13 @@ Conversation = namedtuple('Conversation',
 
 
 def load_from_file(path, datatype):
-    with open(path) as infile:
-        return [datatype(*map(str.strip, line.strip().split(DELIM))) for line in infile]
+    with open(path, 'rb') as infile:
+        return [datatype(*map(bytes.strip, line.strip().split(DELIM))) for line in infile]
 
 
 def load_movies(path='data/movie_titles_metadata.txt'):
     def row_to_movie(*row):
-        new_row = row[:-1] + (eval(row[-1]), )
+        new_row = row[:-1] + (list(map(str.encode, eval(row[-1]))), )
         return Movie(*new_row)
     return load_from_file(path, row_to_movie)
 
@@ -53,7 +53,7 @@ def load_characters(path='data/movie_characters_metadata.txt'):
 
 def load_conversations(path='data/movie_conversations.txt'):
     def row_to_conversation(*row):
-        new_row = row[:-1] + (eval(row[-1]), )
+        new_row = row[:-1] + (list(map(str.encode, eval(row[-1]))), )
         return Conversation(*new_row)
     return load_from_file(path, row_to_conversation)
 
@@ -63,18 +63,18 @@ def load_utterances(path='data/movie_lines.txt'):
 
 
 def in_out_from_utterances(prior, reply, movies, characters, min_genres):
-    movie_tag = '__{}'.format(prior.movie_id)
-    genre_tag = '__cat__{}'.format(min_genres[prior.movie_id])
+    movie_tag = b'__%b' % (prior.movie_id)
+    genre_tag = b'__cat__%b' % (min_genres[prior.movie_id])
     
-    prior_char_tag = '__{}'.format(reply.character_id)
-    prior_gender_tag = '__{}'.format(characters[reply.character_id].gender.lower())
-    in_datum = '{} {} {} {} {}'.format(genre_tag, movie_tag, prior_gender_tag, prior_char_tag,
-                                       prior.text)
+    prior_char_tag = b'__%b' % (reply.character_id)
+    prior_gender_tag = b'__%b' % (characters[reply.character_id].gender.lower())
+    in_datum = b'%b %b %b %b %b' % (genre_tag, movie_tag, prior_gender_tag, prior_char_tag,
+                                        prior.text)
 
-    reply_char_tag = '__{}'.format(reply.character_id)
-    reply_gender_tag = '__{}'.format(characters[reply.character_id].gender.lower())
-    out_datum = '{} {} {} {} {}'.format(genre_tag, movie_tag, reply_gender_tag, reply_char_tag,
-                                        reply.text)
+    reply_char_tag = b'__%b' % (reply.character_id)
+    reply_gender_tag = b'__%b' % (characters[reply.character_id].gender.lower())
+    out_datum = b'%b %b %b %b %b' % (genre_tag, movie_tag, reply_gender_tag, reply_char_tag,
+                                         reply.text)
 
     return in_datum, out_datum
 
@@ -85,7 +85,7 @@ def develop_heldout_split_movie_ids(movies):
 
     def minority_genre(movie):
         if len(movie.genres) == 0:
-            return 'no_genre'
+            return b'no_genre'
         return min([(genre, genre_counts[genre]) for genre in movie.genres], 
                    key=lambda p: p[1])[0]
 
@@ -127,16 +127,16 @@ def prep():
     heldout_out_data = list(toolz.concat([movie_out_data[mid] for mid in heldout_movie_ids]))
 
     print("Writing develop and heldout data to data/*_data.txt")
-    with open('data/develop_in_data.txt', 'w') as outfile:
-        outfile.write('\n'.join(develop_in_data))
+    with open('data/develop_in_data.txt', 'wb') as outfile:
+        outfile.write(b'\n'.join(develop_in_data))
 
-    with open('data/develop_out_data.txt', 'w') as outfile:
-        outfile.write('\n'.join(develop_out_data))
+    with open('data/develop_out_data.txt', 'wb') as outfile:
+        outfile.write(b'\n'.join(develop_out_data))
 
-    with open('data/heldout_in_data.txt', 'w') as outfile:
-        outfile.write('\n'.join(heldout_in_data))
+    with open('data/heldout_in_data.txt', 'wb') as outfile:
+        outfile.write(b'\n'.join(heldout_in_data))
 
-    with open('data/heldout_out_data.txt', 'w') as outfile:
-        outfile.write('\n'.join(heldout_out_data))
+    with open('data/heldout_out_data.txt', 'wb') as outfile:
+        outfile.write(b'\n'.join(heldout_out_data))
 
     print("Done with prep!")
