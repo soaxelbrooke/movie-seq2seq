@@ -29,4 +29,15 @@ chameleons.pdf                 movie_conversations.txt  movie_titles_metadata.tx
 movie_characters_metadata.txt  movie_lines.txt          raw_script_urls.txt
 $ # Run the data prep to create develop and heldout split
 $ PYTHONPATH=$(pwd) python3 prep
+Loading movie, character, and conversation data...
+Splitting data into develop and heldout data based on movie...
+/home/stuart/.local/lib/python3.5/site-packages/sklearn/model_selection/_split.py:581: Warning: The least populated class in y has only 1 members, which is too few. The minimum number of groups for any class cannot be less than n_splits=10.
+  % (min_groups, self.n_splits)), Warning)
+75 of 617 movies chosen for heldout
+Writing develop and heldout data to data/*_data.txt
+Done with prep!
+$ ls data
+chameleons.pdf        heldout_in_data.txt            movie_conversations.txt    raw_script_urls.txt
+develop_in_data.txt   heldout_out_data.txt           movie_lines.txt            README.txt
+develop_out_data.txt  movie_characters_metadata.txt  movie_titles_metadata.txt
 ```
