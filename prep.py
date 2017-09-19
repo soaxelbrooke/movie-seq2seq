@@ -20,6 +20,7 @@ from collections import namedtuple, defaultdict, Counter
 import toolz
 import numpy
 from sklearn.model_selection import StratifiedKFold
+import warnings
 
 pct_heldout = 0.10
 
@@ -92,8 +93,11 @@ def develop_heldout_split_movie_ids(movies):
     minority_movie_genres = [(movie.movie_id, minority_genre(movie)) for movie in movies.values()]
     movie_ids, genres = map(numpy.array, zip(*minority_movie_genres))
 
-    kfold = StratifiedKFold(n_splits=int(1 / pct_heldout))
-    develop_idx, heldout_idx = next(kfold.split(movie_ids, genres))
+    with warnings.catch_warnings():
+        # Some classes just aren't well enough represented, so ignore the warning.
+        warnings.simplefilter("ignore")
+        kfold = StratifiedKFold(n_splits=int(1 / pct_heldout))
+        develop_idx, heldout_idx = next(kfold.split(movie_ids, genres))
 
     return list(movie_ids[develop_idx]), list(movie_ids[heldout_idx]), dict(minority_movie_genres)
 
@@ -107,7 +111,7 @@ def prep():
 
     print("Splitting data into develop and heldout data based on movie...")
     develop_movie_ids, heldout_movie_ids, min_genres = develop_heldout_split_movie_ids(movies)
-    print("{} of {} movies chosen for heldout".format(len(heldout_movie_ids), len(movies)))
+    print("{} of {} movies chosen for heldout...".format(len(heldout_movie_ids), len(movies)))
 
     movie_in_data = defaultdict(list)
     movie_out_data = defaultdict(list)
@@ -126,7 +130,7 @@ def prep():
     heldout_in_data = list(toolz.concat([movie_in_data[mid] for mid in heldout_movie_ids]))
     heldout_out_data = list(toolz.concat([movie_out_data[mid] for mid in heldout_movie_ids]))
 
-    print("Writing develop and heldout data to data/*_data.txt")
+    print("Writing develop and heldout data to data/*_data.txt...")
     with open('data/develop_in_data.txt', 'wb') as outfile:
         outfile.write(b'\n'.join(develop_in_data))
 
