@@ -21,6 +21,7 @@ import toolz
 import numpy
 from sklearn.model_selection import StratifiedKFold
 import warnings
+import subprocess
 
 pct_heldout = 0.10
 
@@ -125,22 +126,21 @@ def prep():
             movie_in_data[conv.movie_id].append(in_data)
             movie_out_data[conv.movie_id].append(out_data)
 
-    develop_in_data = list(toolz.concat([movie_in_data[mid] for mid in develop_movie_ids]))
-    develop_out_data = list(toolz.concat([movie_out_data[mid] for mid in develop_movie_ids]))
-    heldout_in_data = list(toolz.concat([movie_in_data[mid] for mid in heldout_movie_ids]))
-    heldout_out_data = list(toolz.concat([movie_out_data[mid] for mid in heldout_movie_ids]))
+    subprocess.run(['mkdir', '-p', 'data/develop'])
+    subprocess.run(['mkdir', '-p', 'data/heldout'])
 
-    print("Writing develop and heldout data to data/*_data.txt...")
-    with open('data/develop_in_data.txt', 'wb') as outfile:
-        outfile.write(b'\n'.join(develop_in_data))
+    print("Writing development data to data/develop/...")
+    for movie_id in develop_movie_ids:
+        with open('data/develop/{}_in.txt'.format(movie_id.decode()), 'wb') as outfile:
+            outfile.write(b'\n'.join(movie_in_data[movie_id]))
+        with open('data/develop/{}_out.txt'.format(movie_id.decode()), 'wb') as outfile:
+            outfile.write(b'\n'.join(movie_out_data[movie_id]))
 
-    with open('data/develop_out_data.txt', 'wb') as outfile:
-        outfile.write(b'\n'.join(develop_out_data))
-
-    with open('data/heldout_in_data.txt', 'wb') as outfile:
-        outfile.write(b'\n'.join(heldout_in_data))
-
-    with open('data/heldout_out_data.txt', 'wb') as outfile:
-        outfile.write(b'\n'.join(heldout_out_data))
+    print("Writing heldout data to data/heldout/...")
+    for movie_id in heldout_movie_ids:
+        with open('data/heldout/{}_in.txt'.format(movie_id.decode()), 'wb') as outfile:
+            outfile.write(b'\n'.join(movie_in_data[movie_id]))
+        with open('data/heldout/{}_out.txt'.format(movie_id.decode()), 'wb') as outfile:
+            outfile.write(b'\n'.join(movie_out_data[movie_id]))
 
     print("Done with prep!")
