@@ -65,18 +65,19 @@ def load_utterances(path='data/movie_lines.txt'):
 
 
 def in_out_from_utterances(prior, reply, movies, characters, min_genres):
-    movie_tag = b'__%b' % (prior.movie_id)
-    genre_tag = b'__cat__%b' % (min_genres[prior.movie_id])
+    movie_tag = b'AXB%b' % (prior.movie_id)
+    genre_tag = b'AXBcatAXB%b' % (min_genres[prior.movie_id])
     
-    prior_char_tag = b'__%b' % (reply.character_id)
-    prior_gender_tag = b'__%b' % (characters[reply.character_id].gender.lower())
+    prior_char_tag = b'AXB%b' % (reply.character_id)
+    prior_gender_tag = b'AXB%b' % (characters[reply.character_id].gender.lower())
     in_datum = b'%b %b %b %b %b' % (genre_tag, movie_tag, prior_gender_tag, prior_char_tag,
                                         prior.text)
 
-    reply_char_tag = b'__%b' % (reply.character_id)
-    reply_gender_tag = b'__%b' % (characters[reply.character_id].gender.lower())
-    out_datum = b'%b %b %b %b %b' % (genre_tag, movie_tag, reply_gender_tag, reply_char_tag,
-                                         reply.text)
+    reply_char_tag = b'AXB%b' % (reply.character_id)
+    reply_gender_tag = b'AXB%b' % (characters[reply.character_id].gender.lower())
+    # out_datum = b'%b %b %b %b %b' % (genre_tag, movie_tag, reply_gender_tag, reply_char_tag,
+    #                                      reply.text)
+    out_datum = reply.text
 
     return in_datum, out_datum
 
