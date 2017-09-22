@@ -31,6 +31,7 @@ First, download the dataset linked above, and symlink or copy it to `./data/`.
 Second, generate development and heldout data from dataset:
 
 ```bash
+$ pip3 install -r requirements.txt --user # if necessary
 $ # We should see the following results
 $ ls data
 chameleons.pdf                 movie_conversations.txt  movie_titles_metadata.txt  README.txt
