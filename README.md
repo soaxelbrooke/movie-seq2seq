@@ -61,5 +61,5 @@ responses is not available in the dataset itself.
 
 We start to see distinct replies to prompts at around ZZZZZ epochs, with a training loss of AAAAA.
 
-Each epoch takes ~700 seconds (train + eval) on a Quadro M1200 GPU (tested in the Ubuntu Dell 
+Each epoch takes ~630 seconds (train + eval) on a Quadro M1200 GPU (tested in the Ubuntu Dell 
 Precision 5520), which has 640 CUDA cores and a CUDA compute capability of 5.0.
