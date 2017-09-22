@@ -278,14 +278,17 @@ def train_model(model, vocab, inverse_vocab, tokenize, train_x, train_y, test_x,
 
 
 def decode_input_text(model, vocab, inverse_vocab, tokenize, text):
+    """ Horrible hack of a function to test responses to arbitrary strings. Don't try this at home,
+        kids.
+    """
     result_tokens = [vocab['<START>']]
     for i in range(MAXLEN_INPUT):
         answer_vec = (result_tokens + [vocab['<PAD>']] * MAXLEN_INPUT)[:MAXLEN_INPUT]
         input_vec = [vectorize_data(tokenize, vocab, [text], is_input=True), 
                      np.array(answer_vec).reshape((1, MAXLEN_INPUT))]
-        prediction = model.predict([np.vstack([vec]*BATCH_SIZE) for vec in input_vec])[0].reshape(MAXLEN_INPUT, VOCAB_SIZE)
+        prediction = model.predict([np.vstack([vec]*BATCH_SIZE) 
+                                    for vec in input_vec])[0].reshape(MAXLEN_INPUT, VOCAB_SIZE)
         tokens = list(prediction.argmax(axis=1))
-        # print([inverse_vocab[idx] for idx in tokens])
         result_tokens.append(tokens[i])
     return ' '.join([inverse_vocab[idx] for idx in result_tokens])
 
