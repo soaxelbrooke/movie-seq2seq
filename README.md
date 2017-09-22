@@ -1,6 +1,16 @@
 
 # Conversation seq2seq with Keras and Cornell Movie Dialog Dataset
 
+## Goal
+
+The goal of this repo is to demonstrate creating a _real_ seq2seq model in Keras, and evaluating 
+it's results.  There are a lot of incorrect and incomplete seq2seq implementations out there, and
+I was unable to find a reference implementation in Keras with actual results against an open dataset
+discuessed anywhere.
+
+This model does not implement attention, though thanks to the correct implementation of seq2seq 
+here, it would not be difficult to add.
+
 ## Data
 
 [Cornell Movie Dialog Dataset](https://www.cs.cornell.edu/~cristian/Cornell_Movie-Dialogs_Corpus.html)
@@ -11,8 +21,6 @@ Size:
 - 9,035 characters
 - 616 movies
 - 24 categories
-  - (adult, fantasy, drama, biography, action, musical, comedy, documentary, history, sport, adventure, mystery, film-noir, crime, western, sci-fi, thriller, horror, music, war, family, romance, short, animation)
-
 
 Each line of `movie_lines.txt` has the line ID, character ID, movie ID, character name, and the line of dialog.
 
@@ -28,7 +36,7 @@ $ ls data
 chameleons.pdf                 movie_conversations.txt  movie_titles_metadata.txt  README.txt
 movie_characters_metadata.txt  movie_lines.txt          raw_script_urls.txt
 $ # Run the data prep to create develop and heldout split
-$ PYTHONPATH=$(pwd) python3 prep
+$ PYTHONPATH=$(pwd) python3 main.py prep
 Loading movie, character, and conversation data...
 Splitting data into develop and heldout data based on movie...
 75 of 617 movies chosen for heldout...
@@ -38,6 +46,17 @@ Done with prep!
 $ ls data
 chameleons.pdf  heldout                        movie_conversations.txt  movie_titles_metadata.txt  README.txt
 develop         movie_characters_metadata.txt  movie_lines.txt          raw_script_urls.txt
+$ PYTHONPATH=$(pwd) python3 main.py train
+... lots of training stuff...
 ```
 
+
+## Results
+
+Using the configurations set in this repo, training for 100 epochs on 131,072 utterances, we reach
+a categorical cross-entropy of XXXXX in YYYY epochs, which is where overfitting starts to occur.  
+Overfitting is expected in this dataset, since so much of the information required for accurate 
+responses is not available in the dataset itself.
+
+We start to see distinct replies to prompts at around ZZZZZ epochs, with a training loss of AAAAA.
 
