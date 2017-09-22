@@ -26,6 +26,7 @@ import subprocess
 pct_heldout = 0.10
 
 DELIM = b'+++$+++'
+PARAM_DELIM = b'__'
 
 Utterance = namedtuple('Utterance', 
     ('utterance_id', 'character_id', 'movie_id', 'character_name', 'text'))
@@ -65,18 +66,20 @@ def load_utterances(path='data/movie_lines.txt'):
 
 
 def in_out_from_utterances(prior, reply, movies, characters, min_genres):
-    movie_tag = b'AXB%b' % (prior.movie_id)
-    genre_tag = b'AXBcatAXB%b' % (min_genres[prior.movie_id])
+    movie_tag = b'%b%b' % (PARAM_DELIM, prior.movie_id)
+    genre_tag = b'%b%b' % (PARAM_DELIM, min_genres[prior.movie_id].replace(b'-', b'_'))
     
-    prior_char_tag = b'AXB%b' % (reply.character_id)
-    prior_gender_tag = b'AXB%b' % (characters[reply.character_id].gender.lower())
-    in_datum = b'%b %b %b %b %b' % (genre_tag, movie_tag, prior_gender_tag, prior_char_tag,
-                                        prior.text)
+    prior_char_tag = b'%b%b' % (PARAM_DELIM, reply.character_id)
+    prior_gender_tag = b'%b%b' % (PARAM_DELIM, characters[reply.character_id].gender.lower())
+    # in_datum = b'%b %b %b %b %b' % (genre_tag, movie_tag, prior_gender_tag, prior_char_tag,
+    #                                     prior.text)
+    in_datum = b'%b %b' % (genre_tag, prior.text)
 
-    reply_char_tag = b'AXB%b' % (reply.character_id)
-    reply_gender_tag = b'AXB%b' % (characters[reply.character_id].gender.lower())
+    reply_char_tag = b'%b%b' % (PARAM_DELIM, reply.character_id)
+    reply_gender_tag = b'%b%b' % (PARAM_DELIM, characters[reply.character_id].gender.lower())
     # out_datum = b'%b %b %b %b %b' % (genre_tag, movie_tag, reply_gender_tag, reply_char_tag,
     #                                      reply.text)
+    # out_datum = b'%b %b' % (movie_tag, reply.text)
     out_datum = reply.text
 
     return in_datum, out_datum
