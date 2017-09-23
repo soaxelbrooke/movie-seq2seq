@@ -6,6 +6,7 @@ from sklearn.preprocessing import label_binarize
 from collections import defaultdict
 import numpy as np
 import toolz
+from bpe.encoder import Encoder
 
 PCT_TEST_DATA = 0.20
 VOCAB_SIZE = 2**12
@@ -19,9 +20,9 @@ LSTM_OUTPUT_DROPOUT = 0.2
 LSTM_RECURRENT_DROPOUT = 0.2
 DENSE_DROPOUT = 0.2
 
-USE_GLOVE = True
+USE_GLOVE = False
 
-META_BATCH_SIZE = 4 * 1024 * BATCH_SIZE
+META_BATCH_SIZE = 64 * BATCH_SIZE
 
 def train():
     """ Train keras model and save to disk in models/latest.bin """
@@ -32,29 +33,47 @@ def train():
         len(train_in), len(test_in)))
 
     print("Fitting vocab from loaded data...")
-    vocab, tokenize = vocab_for_lines(train_in + train_out + test_in + test_out)
-    inverse_vocab = {v: k for k, v in vocab.items()}
-    print(tokenize(train_in[0]))
+    encoder = encoder_for_lines(train_in + train_out + test_in + test_out)
+    # vocab, tokenize = vocab_for_lines(train_in + train_out + test_in + test_out)
+    # inverse_vocab = {v: k for k, v in vocab.items()}
+    # print(tokenize(train_in[0]))
+    print(train_in[0:1])
+    print(list(encoder.transform(train_in[0:1])))
+    print(list(encoder.inverse_transform(encoder.transform(train_in[0:1]))))
 
-    print("Transforming input and output data...")
-    train_x = vectorize_data(tokenize, vocab, train_in, is_input=True)
-    train_y = vectorize_data(tokenize, vocab, train_out, is_input=False)
-    test_x = vectorize_data(tokenize, vocab, test_in, is_input=True)
-    test_y = vectorize_data(tokenize, vocab, test_out, is_input=False)
+    print("Transforming input and output data...")    
+    train_x = encode_data(encoder, train_in, is_input=True)
+    train_y = encode_data(encoder, train_out, is_input=False)
+    test_x = encode_data(encoder, test_in, is_input=True)
+    test_y = encode_data(encoder, test_out, is_input=False)
+    print(train_x.shape, train_y.shape, test_x.shape, test_y.shape)
+    print(train_x)
+    print(train_y)
+    print(test_x)
+    print(test_y)
 
+    # train_x = vectorize_data(tokenize, vocab, train_in, is_input=True)
+    # train_y = vectorize_data(tokenize, vocab, train_out, is_input=False)
+    # test_x = vectorize_data(tokenize, vocab, test_in, is_input=True)
+    # test_y = vectorize_data(tokenize, vocab, test_out, is_input=False)
+    # print(train_x.shape, train_y.shape, test_x.shape, test_y.shape)
+    
     print("Building keras seq2seq model...")
-    model = build_model(vocab)
+    # model = build_model(vocab)
+    model = build_model(None)
 
     print("Summary of built model:")
     print(model.summary())
 
     print("Training model...")
-    train_model(model, vocab, inverse_vocab, tokenize, train_x, train_y, test_x, test_y)
+    # train_model(model, vocab, inverse_vocab, tokenize, train_x, train_y, test_x, test_y)
+    train_model_2(model, encoder, train_x, train_y, test_x, test_y)
 
     while True:
         print("Reply to what?")
         text = input('> ')
-        print(decode_input_text(model, vocab, inverse_vocab, tokenize, text))
+        # print(decode_input_text(model, vocab, inverse_vocab, tokenize, text))
+        print(decode_input_text_2(model, encoder, text))
 
 
 def build_model(vocab):
@@ -214,6 +233,43 @@ def build_model(vocab):
     return model
 
 
+
+def train_model_epoch(model, train_x, train_y, test_x, test_y, N, START):
+    # Prepend <START> to training responses
+    answers_in_train = np.hstack([
+        np.ones((len(train_x), 1), dtype='int32') * START,
+        train_y[:, :-1]
+    ])
+    # We have to add an extra dimension for Keras' sparse_categorical_crossentropy
+    answers_out_train = train_y.reshape((len(train_x), MAXLEN_INPUT, 1))
+
+
+    answers_in_test = np.hstack([
+        np.ones((len(test_x), 1), dtype='int32') * START,
+        test_y[:, :-1]
+    ])
+    answers_out_test = test_y.reshape((len(test_x), MAXLEN_INPUT, 1))
+
+    model.fit(
+        x=[train_x[:N], answers_in_train[:N]],
+        y=answers_out_train[:N],
+        epochs=1,
+        batch_size=BATCH_SIZE,
+    )
+
+    # Need to ensure our datasize for testing is evenly divisible by batch size.  This is 
+    # done by default for training size, but test size is smaller, so it must be done
+    # again.
+    test_n = BATCH_SIZE * int(min([len(test_x), N]) / BATCH_SIZE)
+    score = model.evaluate(
+        x=[test_x[:test_n], answers_in_test[:test_n]],
+        y=(answers_out_test[:test_n]),
+        batch_size=BATCH_SIZE,
+    )
+
+    print('\nValidation score:', score)
+
+
 def train_model(model, vocab, inverse_vocab, tokenize, train_x, train_y, test_x, test_y):
     # sparse_categorical_crossentropy is effectively a sampled softmax here, and is critical for
     # model training performance, since it allows you to pass token IDs instead of sparse 
@@ -221,7 +277,6 @@ def train_model(model, vocab, inverse_vocab, tokenize, train_x, train_y, test_x,
     model.compile(optimizer='adam', loss='sparse_categorical_crossentropy')
 
     START = vocab['<START>']
-    PAD = vocab['<PAD>']
 
     TEST_INPUT = [
         "__romance When did you start drinking again?",
@@ -238,39 +293,34 @@ def train_model(model, vocab, inverse_vocab, tokenize, train_x, train_y, test_x,
                 print('> ', text)
                 print(decode_input_text(model, vocab, inverse_vocab, tokenize, text))
 
-            # Prepend <START> to training responses
-            answers_in_train = np.hstack([
-                np.ones((len(train_x), 1), dtype='int32') * START,
-                train_y[:, :-1]
-            ])
-            # We have to add an extra dimension for Keras' sparse_categorical_crossentropy
-            answers_out_train = train_y.reshape((len(train_x), MAXLEN_INPUT, 1))
+            train_model_epoch(model, train_x, train_y, test_x, test_y, N, START)
+
+    except KeyboardInterrupt:
+        print("Caught keyboard interrupt, halting training...")
+        return model
 
 
-            answers_in_test = np.hstack([
-                np.ones((len(test_x), 1), dtype='int32') * START,
-                test_y[:, :-1]
-            ])
-            answers_out_test = test_y.reshape((len(test_x), MAXLEN_INPUT, 1))
+def train_model_2(model, encoder, train_x, train_y, test_x, test_y):
+    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy')
 
-            model.fit(
-                x=[train_x[:N], answers_in_train[:N]],
-                y=answers_out_train[:N],
-                epochs=1,
-                batch_size=BATCH_SIZE,
-            )
+    START = encoder.word_vocab['<start/>' + encoder.EOW]
 
-            # Need to ensure our datasize for testing is evenly divisible by batch size.  This is 
-            # done by default for training size, but test size is smaller, so it must be done
-            # again.
-            test_n = BATCH_SIZE * int(min([len(test_x), N]) / BATCH_SIZE)
-            score = model.evaluate(
-                x=[test_x[:test_n], answers_in_test[:test_n]],
-                y=(answers_out_test[:test_n]),
-                batch_size=BATCH_SIZE,
-            )
+    TEST_INPUT = [
+        "__romance When did you start drinking again?",
+        "__thriller So you're from around here?",
+    ]
 
-            print('\nValidation score:', score)
+    try:
+        for epoch in range(MAX_EPOCHS):
+            print("Training epoch {}".format(epoch))
+            N = META_BATCH_SIZE
+
+            print("Evaluating test examples...")
+            for text in TEST_INPUT:
+                print('> ', text)
+                print(decode_input_text_2(model, encoder, text))
+
+            train_model_epoch(model, train_x, train_y, test_x, test_y, N, START)
 
     except KeyboardInterrupt:
         print("Caught keyboard interrupt, halting training...")
@@ -291,6 +341,23 @@ def decode_input_text(model, vocab, inverse_vocab, tokenize, text):
         tokens = list(prediction.argmax(axis=1))
         result_tokens.append(tokens[i])
     return ' '.join([inverse_vocab[idx] for idx in result_tokens])
+
+
+def decode_input_text_2(model, encoder, text):
+    """ Horrible hack of a function to test responses to arbitrary strings. Don't try this at home,
+        kids.
+    """
+    result_tokens = [encoder.word_vocab['<start/>' + encoder.EOW]]
+    for i in range(MAXLEN_INPUT):
+        answer_vec = (result_tokens + 
+                      [encoder.word_vocab['<pad/>' + encoder.EOW]] * MAXLEN_INPUT)[:MAXLEN_INPUT]
+        input_vec = [encode_data(encoder, [text], is_input=True), 
+                     np.array(answer_vec).reshape((1, MAXLEN_INPUT))]
+        prediction = model.predict([np.vstack([vec]*BATCH_SIZE) 
+                                    for vec in input_vec])[0].reshape(MAXLEN_INPUT, VOCAB_SIZE)
+        tokens = list(prediction.argmax(axis=1))
+        result_tokens.append(tokens[i])
+    return list(encoder.inverse_transform([result_tokens]))
 
 
 def train_test_split(develop_data):
@@ -384,3 +451,15 @@ def load_embedding_glove_weights(vocab):
     return array_result
 
 
+def encode_data(encoder, text, is_input=False):
+    """ Encode data using provided encoder, for use in training/testing """
+    return np.array(list(encoder.transform(text, reversed=is_input, fixed_length=MAXLEN_INPUT,
+                                           padding='<pad/>')),
+                    dtype='int32')
+
+
+def encoder_for_lines(lines):
+    """ Calculate BPE encoder for provided lines of text """
+    encoder = Encoder(vocab_size=VOCAB_SIZE, required_tokens=['<start/>', '<pad/>'])
+    encoder.fit(lines)
+    return encoder

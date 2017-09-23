@@ -3,3 +3,5 @@ toolz
 sklearn
 numpy
 scipy
+tensorflow-gpu
+git+git@github.com:soaxelbrooke/python-bpe.git
