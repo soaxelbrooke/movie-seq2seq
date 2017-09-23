@@ -22,7 +22,7 @@ DENSE_DROPOUT = 0.2
 
 USE_GLOVE = False
 
-META_BATCH_SIZE = 64 * BATCH_SIZE
+META_BATCH_SIZE = 1024 * BATCH_SIZE
 
 def train():
     """ Train keras model and save to disk in models/latest.bin """
