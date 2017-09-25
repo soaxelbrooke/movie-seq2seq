@@ -24,6 +24,13 @@ USE_GLOVE = False
 
 META_BATCH_SIZE = 1024 * BATCH_SIZE
 
+
+START = '<start/>'
+PAD = '<pad/>'
+END = '<end/>'
+OOV = '<oov/>'
+
+
 def train():
     """ Train keras model and save to disk in models/latest.bin """
     print("Loading development data...")
@@ -68,6 +75,8 @@ def train():
     print("Training model...")
     # train_model(model, vocab, inverse_vocab, tokenize, train_x, train_y, test_x, test_y)
     train_model_2(model, encoder, train_x, train_y, test_x, test_y)
+
+    model.save('latest_model.h5')
 
     while True:
         print("Reply to what?")
@@ -270,40 +279,10 @@ def train_model_epoch(model, train_x, train_y, test_x, test_y, N, START):
     print('\nValidation score:', score)
 
 
-def train_model(model, vocab, inverse_vocab, tokenize, train_x, train_y, test_x, test_y):
-    # sparse_categorical_crossentropy is effectively a sampled softmax here, and is critical for
-    # model training performance, since it allows you to pass token IDs instead of sparse 
-    # one-vs-all vectors.
-    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy')
-
-    START = vocab['<START>']
-
-    TEST_INPUT = [
-        "__romance When did you start drinking again?",
-        "__thriller So you're from around here?",
-    ]
-
-    try:
-        for epoch in range(MAX_EPOCHS):
-            print("Training epoch {}".format(epoch))
-            N = META_BATCH_SIZE
-
-            print("Evaluating test examples...")
-            for text in TEST_INPUT:
-                print('> ', text)
-                print(decode_input_text(model, vocab, inverse_vocab, tokenize, text))
-
-            train_model_epoch(model, train_x, train_y, test_x, test_y, N, START)
-
-    except KeyboardInterrupt:
-        print("Caught keyboard interrupt, halting training...")
-        return model
-
-
 def train_model_2(model, encoder, train_x, train_y, test_x, test_y):
     model.compile(optimizer='adam', loss='sparse_categorical_crossentropy')
 
-    START = encoder.word_vocab['<start/>' + encoder.EOW]
+    start_idx = encoder.word_vocab[START + encoder.EOW]
 
     TEST_INPUT = [
         "__romance When did you start drinking again?",
@@ -320,7 +299,7 @@ def train_model_2(model, encoder, train_x, train_y, test_x, test_y):
                 print('> ', text)
                 print(decode_input_text_2(model, encoder, text))
 
-            train_model_epoch(model, train_x, train_y, test_x, test_y, N, START)
+            train_model_epoch(model, train_x, train_y, test_x, test_y, N, start_idx)
 
     except KeyboardInterrupt:
         print("Caught keyboard interrupt, halting training...")
@@ -331,9 +310,9 @@ def decode_input_text(model, vocab, inverse_vocab, tokenize, text):
     """ Horrible hack of a function to test responses to arbitrary strings. Don't try this at home,
         kids.
     """
-    result_tokens = [vocab['<START>']]
+    result_tokens = [vocab[START]]
     for i in range(MAXLEN_INPUT):
-        answer_vec = (result_tokens + [vocab['<PAD>']] * MAXLEN_INPUT)[:MAXLEN_INPUT]
+        answer_vec = (result_tokens + [vocab[START]] * MAXLEN_INPUT)[:MAXLEN_INPUT]
         input_vec = [vectorize_data(tokenize, vocab, [text], is_input=True), 
                      np.array(answer_vec).reshape((1, MAXLEN_INPUT))]
         prediction = model.predict([np.vstack([vec]*BATCH_SIZE) 
@@ -347,10 +326,10 @@ def decode_input_text_2(model, encoder, text):
     """ Horrible hack of a function to test responses to arbitrary strings. Don't try this at home,
         kids.
     """
-    result_tokens = [encoder.word_vocab['<start/>' + encoder.EOW]]
+    result_tokens = [encoder.word_vocab[START + encoder.EOW]]
     for i in range(MAXLEN_INPUT):
         answer_vec = (result_tokens + 
-                      [encoder.word_vocab['<pad/>' + encoder.EOW]] * MAXLEN_INPUT)[:MAXLEN_INPUT]
+                      [encoder.word_vocab[PAD + encoder.EOW]] * MAXLEN_INPUT)[:MAXLEN_INPUT]
         input_vec = [encode_data(encoder, [text], is_input=True), 
                      np.array(answer_vec).reshape((1, MAXLEN_INPUT))]
         prediction = model.predict([np.vstack([vec]*BATCH_SIZE) 
@@ -400,7 +379,7 @@ def vectorize_data(tokenize, vocab, lines, is_input=False):
             if idx < len(tokens):
                 vector.append(vocab[tokens[idx]])
             else:
-                vector.append(vocab['<PAD>'])
+                vector.append(vocab[PAD])
 
         if is_input:
             vectors.append(vector[::-1])
@@ -415,12 +394,12 @@ def vocab_for_lines(lines):
     vectorizer = CountVectorizer(max_features=VOCAB_SIZE - 4, stop_words=[], token_pattern='\w+')
     vectorizer.fit(lines)
     vocab = vectorizer.vocabulary_
-    vocab['<PAD>'] = len(vocab)
-    vocab['<START>'] = len(vocab)
-    vocab['<END>'] = len(vocab)
-    vocab['<OOV>'] = len(vocab)
+    vocab[PAD] = len(vocab)
+    vocab[START] = len(vocab)
+    vocab[END] = len(vocab)
+    vocab[OOV] = len(vocab)
 
-    return defaultdict(lambda: vocab['<OOV>'], vocab.items()), vectorizer.build_analyzer()
+    return defaultdict(lambda: vocab[OOV], vocab.items()), vectorizer.build_analyzer()
 
 
 def load_embedding_glove_weights(vocab):
@@ -454,12 +433,13 @@ def load_embedding_glove_weights(vocab):
 def encode_data(encoder, text, is_input=False):
     """ Encode data using provided encoder, for use in training/testing """
     return np.array(list(encoder.transform(text, reversed=is_input, fixed_length=MAXLEN_INPUT,
-                                           padding='<pad/>')),
+                                           padding=PAD)),
                     dtype='int32')
 
 
 def encoder_for_lines(lines):
     """ Calculate BPE encoder for provided lines of text """
-    encoder = Encoder(vocab_size=VOCAB_SIZE, required_tokens=['<start/>', '<pad/>'])
+    encoder = Encoder(vocab_size=VOCAB_SIZE, required_tokens=[START, PAD])
     encoder.fit(lines)
+    encoder.save('latest_encoder.json')
     return encoder
