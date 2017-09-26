@@ -110,3 +110,4 @@ logs
 encoder.json
 latest_encoder.json
 latest_model.h5
+timeline.ctf.json
