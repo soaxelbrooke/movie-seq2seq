@@ -54,12 +54,4 @@ $ PYTHONPATH=$(pwd) python3 main.py train
 
 ## Results
 
-Using the configurations set in this repo, training for 100 epochs on 131,072 utterances, we reach
-a categorical cross-entropy of XXXXX in YYYY epochs, which is where overfitting starts to occur.  
-Overfitting is expected in this dataset, since so much of the information required for accurate 
-responses is not available in the dataset itself.
-
-We start to see distinct replies to prompts at around ZZZZZ epochs, with a training loss of AAAAA.
-
-Each epoch takes ~630 seconds (train + eval) on a Quadro M1200 GPU (tested in the Ubuntu Dell 
-Precision 5520), which has 640 CUDA cores and a CUDA compute capability of 5.0.
+`TODO`
