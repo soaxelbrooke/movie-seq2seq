@@ -5,4 +5,4 @@ numpy
 scipy
 h5py
 tensorflow-gpu
--e git://github.com/soaxelbrooke/python-bpe.git#egg=bpe
+git+https://github.com/soaxelbrooke/python-bpe.git@master
