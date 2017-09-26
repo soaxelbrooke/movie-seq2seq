@@ -3,5 +3,6 @@ toolz
 sklearn
 numpy
 scipy
+h5py
 tensorflow-gpu
 -e git://github.com/soaxelbrooke/python-bpe.git#egg=bpe
