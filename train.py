@@ -31,10 +31,10 @@ OOV = '<oov/>'
 
 SEQ2SEQ_PARAMS = Seq2SeqConfig(
     message_len=MAX_LEN_INPUT,
-    batch_size=32,
+    batch_size=64,
     context_size=100,
     embed_size=100,
-    use_cuda=False,
+    use_cuda=True,
     vocab_size=2**13,
 )
 

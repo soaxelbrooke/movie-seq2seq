@@ -18,13 +18,18 @@ def build_model(cfg, start_idx):
     shared_embedding = build_shared_embedding(cfg)
     encoder = GruEncoder(cfg, shared_embedding, 1)
     decoder = GruDecoder(cfg, shared_embedding, 1)
+
+    if cfg.use_cuda:
+        encoder.cuda()
+        decoder.cuda()
+
     return GruModel(cfg, encoder, decoder, shared_embedding, start_idx)
 
 
-def build_shared_embedding(params):
+def build_shared_embedding(cfg):
     """ Builds embedding to be used by encoder and decoder """
-    # type: (Seq2SeqConfig) -> nn.Embedding
-    return nn.Embedding(params.vocab_size, params.embed_size)
+    # type: Seq2SeqConfig -> nn.Embedding
+    return nn.Embedding(cfg.vocab_size, cfg.embed_size)
 
 
 class GruModel:
@@ -58,12 +63,19 @@ class GruModel:
                        range(self.cfg.batch_size, len(train_x), self.cfg.batch_size))
 
         for start, end in idx_iter:
+            x_batch = torch.LongTensor(train_x[start:end])
+            y_batch = torch.LongTensor(train_y[start:end])
+
+            if self.cfg.use_cuda:
+                x_batch = x_batch.cuda()
+                y_batch = y_batch.cuda()
+
             loss = self._train_inner(
-                Variable(torch.LongTensor(train_x[start:end]).view(-1, self.cfg.batch_size)),
-                Variable(torch.LongTensor(train_y[start:end]).view(-1, self.cfg.batch_size)),
+                Variable(x_batch.view(-1, self.cfg.batch_size)),
+                Variable(y_batch.view(-1, self.cfg.batch_size)),
             )
             loss_queue.append(loss)
-            progress.set_postfix(loss=np.mean(loss_queue))
+            progress.set_postfix(loss=np.mean(loss_queue), refresh=False)
             progress.update(self.cfg.batch_size)
 
         return np.mean(loss_queue)
@@ -79,8 +91,12 @@ class GruModel:
 
         decoder_input = Variable(torch.LongTensor([[self.start_idx]] * self.cfg.batch_size))
 
+        if self.cfg.use_cuda:
+            decoder_input = decoder_input.cuda()
+
         should_use_teacher = self.teacher_should_force()
         for input_idx in range(self.cfg.message_len):
+
             decoder_output, decoder_hidden = self.decoder(decoder_input, decoder_hidden)
             loss += self.loss_fn(decoder_output, target_var_batch[input_idx, :])
 
@@ -90,7 +106,7 @@ class GruModel:
             else:
                 # Get the highest values and their indexes over axis 1
                 top_vals, top_idxs = decoder_output.data.topk(1)
-                decoder_input = Variable(torch.LongTensor(top_idxs.squeeze()))
+                decoder_input = Variable(top_idxs.squeeze())
 
         loss.backward()
         nn.utils.clip_grad_norm(self.encoder.parameters(), self.gradient_clip)
@@ -126,7 +142,7 @@ class GruEncoder(nn.Module):
         return self.rnn(embedded, hidden_state)
 
     def init_hidden(self):
-        hidden = Variable(torch.randn(self.n_layers, 1, self.cfg.context_size))
+        hidden = Variable(torch.randn(self.n_layers, self.cfg.batch_size, self.cfg.context_size))
         return hidden.cuda() if self.cfg.use_cuda else hidden
 
 
