@@ -4,14 +4,8 @@ import random
 
 import numpy as np
 from bpe.encoder import Encoder
-from keras import Input
-from keras.engine import Model
-from keras.layers import Concatenate, Embedding, LSTM, Dense, TimeDistributed, Lambda, Multiply, \
-    Add, Reshape, concatenate, Dot
 
-from tensorflow.python.client import timeline
-import tensorflow as tf
-
+from model import Seq2SeqConfig
 
 PCT_TEST_DATA = 0.20
 VOCAB_SIZE = 2**12
@@ -35,12 +29,18 @@ START = '<start/>'
 END = '<end/>'
 OOV = '<oov/>'
 
+SEQ2SEQ_PARAMS = Seq2SeqConfig(
+    message_len=MAX_LEN_INPUT,
+    batch_size=32,
+    context_size=100,
+    embed_size=100,
+    use_cuda=False,
+    vocab_size=2**13,
+)
+
 
 def train():
     """ Train keras model and save to disk in models/latest.bin """
-    print("Building keras seq2seq model...")
-    model, run_meta = build_model()
-
     print("Loading development data...")
     develop_data = load_develop_data()
     train_in, train_out, test_in, test_out = train_test_split(develop_data)
@@ -57,307 +57,25 @@ def train():
     test_y = encode_data(encoder, test_out, is_input=False)
     encoder.mute()
 
-    print("Summary of built model:")
-    print(model.summary())
+    print("Building pytorch seq2seq model...")
+    from gru_model import build_model
+    model = build_model(SEQ2SEQ_PARAMS, encoder.word_vocab[START])
 
-    print("Training model...")
-    train_model(model, encoder, train_x, train_y, test_x, test_y)
 
-    print("Saving tensorflow profiling info at ./timeline.ctf.json...")
-    trace = timeline.Timeline(step_stats=run_meta.step_stats)
-    with open('timeline.ctf.json', 'w') as outfile:
-        outfile.write(trace.generate_chrome_trace_format())
-
-    model.save('latest_model.h5')
+    train_model(model, train_x, train_y, test_x, test_y)
 
     while True:
         print("Reply to what?")
         text = input('> ')
-        print(decode_input_text(model, encoder, text))
+        print(get_model_response(model, encoder, text))
 
 
-def build_model():
-    """ Shared embedding used by encoder and decoder input tokens.  GloVe weight initialization is
-        optional, but it was found to not impact the results meaningfully or increase the speed of
-        training.
-    """
-    # Shape of embeddings are (N, WORD_EMBED_SIZE)
-    shared_embedding = Embedding(
-        output_dim=WORD_EMBED_SIZE,
-        input_dim=VOCAB_SIZE,
-        input_length=1,
-        name='embedding',
-    )
+def train_model(model, train_x, train_y, test_x, test_y):
+    """ Train provided model """
+    model.train_epoch(train_x, train_y)
 
-    # =============================================================================================
-    # ====================================  ENCODER TIME!  ========================================
-    # =============================================================================================
-
-    # Encoder inputs - uses token IDs, which are turned into embeddings via the embedding layer 
-    # above.  Shape of encoder inputs are (MAXLEN_INPUT, )
-    encoder_input = Input(
-        shape=(MAX_LEN_INPUT,),
-        dtype='int32',
-        name='encoder_input',
-        batch_shape=(BATCH_SIZE, MAX_LEN_INPUT),
-    )
-
-    # Embedded version of the encoder input.  This is all MAXLEN_INPUT tokens, and will be split
-    # for each "invocation" of the first encoder LSTM layer.
-    embedded_input = shared_embedding(encoder_input)
-
-    # Defines the encoder LSTM that is hared for each input token
-    encoder_lstm = LSTM(
-        CONTEXT_SIZE,
-        name='encoder_0',
-        dropout=LSTM_OUTPUT_DROPOUT,
-        recurrent_dropout=LSTM_RECURRENT_DROPOUT,
-        return_state=True,
-        stateful=True,
-    )
-
-    # First encoder LSTM invocation doesn't have any initial recurrent state, so it must be
-    # invoked once outside the loop.
-    current_encoder_output, *current_encoder_state = encoder_lstm(
-        Lambda(
-            lambda x: x[:, 0:1], 
-            output_shape=(1, WORD_EMBED_SIZE)
-        )(embedded_input)
-    )
-
-    encoder_outputs = []
-
-    for input_idx in range(0, MAX_LEN_INPUT):
-        # We have to use a Lambda layer here to slice the (MAXLEN_INPUT, WORD_EMBED_SIZE)-shaped
-        # input tensor into (1, WORD_EMBED_SIZE)-shaped tensors for each LSTM invocation.  We have
-        # to tell Keras the shape of the result, since it can't be inferred from the lambda inside.
-        encoder_input_slice = \
-            Lambda(
-                lambda x: x[:, input_idx:input_idx+1], 
-                output_shape=(1, WORD_EMBED_SIZE),
-            )(embedded_input)
-
-        current_encoder_output, *current_encoder_state = encoder_lstm(
-            encoder_input_slice,
-            current_encoder_state,
-        )
-
-        encoder_outputs.append(current_encoder_output)
-
-    # At this point, our encoder is complete.  The `current_encoder_state` is two tensors that
-    # represent the LSTM state after the last token has been fed in, which we need to intiialize
-    # the decoder with.
-
-    # If we were going to add attention, we would build a list of `current_encoder_out` for each
-    # encoder step, and make an attention unit for each decoder LSTM input based on all encoder
-    # outputs (not states) and the previous decoder state.  For this implementation, they are
-    # not used, since the context vector is passed as the LSTM state.
-
-    # =============================================================================================
-    # ====================================  DECODER TIME!  ========================================
-    # =============================================================================================
-
-    # Input for the decoder, essentially the same as the encoder input above.  In training, the 
-    # whole decoder token string is fed.  For test decoding of strings, zeros are fed for future 
-    # tokens, and the model is re-evaluated for each token to be generated.  In real applications,
-    # you'd want to re-wire the network so that each LSTM output took the result of the prior 
-    # invocation of the LSTM.
-
-    # Inputs, embedding, and decoder LSTM creation are unchanged from the encoder stage.
-
-    decoder_inputs = Input(
-        shape=(MAX_LEN_INPUT,),
-        dtype='int32',
-        name='decoder_inputs_0',
-        batch_shape=(BATCH_SIZE, MAX_LEN_INPUT),
-    )
-
-    embedded_decoder_input = shared_embedding(decoder_inputs)
-
-    decoder_lstm = LSTM(
-        CONTEXT_SIZE,
-        name='decoder_0',
-        dropout=LSTM_OUTPUT_DROPOUT,
-        recurrent_dropout=LSTM_RECURRENT_DROPOUT,
-        return_state=True,
-        stateful=True,
-    )
-
-    # Set initial decoder state from encoder, and prepare to aggregate decoder LSTM outputs.
-    # These decoder outputs will be put through a dense softmax layer for sampling into tokens.
-
-    current_decoder_state = current_encoder_state
-    decoder_outputs = []
-
-    attn_dot = Dot(axes=(2, 1), normalize=True)
-    attn_cat = Concatenate(axis=1, input_shape=(1,), name='attn_cat')
-    attn_softmax = Dense(MAX_LEN_INPUT, input_shape=(MAX_LEN_INPUT,), activation='softmax',
-                         name='attn_softmax')
-    attn_multiply = Multiply(name='attn_multiply')
-    attn_sum = Add(input_shape=(CONTEXT_SIZE, ), name='attn_sum')
-
-    def attend_to(decoder_state):
-        # Dot product result shape: (BATCH_SIZE, 1) per decoder input
-        _dots = [
-            attn_dot([
-                Reshape((1, CONTEXT_SIZE))(decoder_state),
-                Reshape((CONTEXT_SIZE, 1))(encoder_outputs[idx]),
-            ])
-            for idx in range(MAX_LEN_INPUT)
-        ]
-        # Concatenation for the attention softmax, new shape (BATCH_SIZE, MAXLEN_INPUT)
-        _cat = Reshape((MAX_LEN_INPUT,))(attn_cat(_dots))
-        _softmax = attn_softmax(_cat)
-        # Softmax provides weights per encoder output, need to split with lambda
-        _multiplies = [
-            attn_multiply([
-                encoder_outputs[idx],
-                Lambda(
-                    lambda x: x[:, idx:idx+1],
-                    output_shape=(MAX_LEN_INPUT, CONTEXT_SIZE),
-                )(_softmax)
-            ])
-            for idx in range(MAX_LEN_INPUT)
-        ]
-
-        _sum = attn_sum(_multiplies)
-        # Lambda required here to show Keras the result layer shape
-        return Lambda(
-                    lambda x: x,
-                    output_shape=(1, CONTEXT_SIZE),
-                )(_sum)
-
-    for decoder_idx in range(0, MAX_LEN_INPUT):
-        # Same slicing of inputs and passing of last decoder state into next decoder invoation that
-        # we saw in the endocer above.  If attention was added, it would be concatenated with the
-        # decoder input here.
-        decoder_input_slice = \
-            Lambda(
-                lambda x: x[:, decoder_idx],
-                output_shape=(1, WORD_EMBED_SIZE),
-            )(embedded_decoder_input)
-
-        if USE_ATTENTION:
-            decoder_input_size = (CONTEXT_SIZE + WORD_EMBED_SIZE, 1)
-            decoder_input = concatenate([
-                decoder_input_slice,
-                attend_to(current_decoder_state[0])
-            ])
-        else:
-            decoder_input_size = (WORD_EMBED_SIZE, 1)
-            decoder_input = decoder_input_slice
-
-        current_decoder_output, *current_decoder_state = \
-            decoder_lstm(
-                Reshape(decoder_input_size)(decoder_input),
-                current_decoder_state,
-            )
-
-        # Aggregate decoder outputs for merging.
-        decoder_outputs.append(current_decoder_output)
-
-    # Reshape is required here to turn concated array from (None, MAXLEN_INPUT * CONTEXT_SIZE) into
-    # shape of (None, MAXLEN_INPUT, CONTEXT_SIZE) for the time-distributed dense layer below.  This
-    # allows the dense embedding-to-sampled-token layer to be shared for each output token.
-    decoder_outputs = Reshape(
-            (MAX_LEN_INPUT, CONTEXT_SIZE)
-        )(concatenate(decoder_outputs, axis=1))
-
-    # Dense layer transforming decoder output into a softmax word-distribution.
-    word_dists = \
-        TimeDistributed(
-            Dense(
-                VOCAB_SIZE,
-                activation='softmax',
-                name='word_dist',
-            )
-        )(decoder_outputs)
-
-    model = Model(inputs=[encoder_input, decoder_inputs], outputs=word_dists)
-    run_options = tf.RunOptions(trace_level=tf.RunOptions.FULL_TRACE)
-    run_metadata = tf.RunMetadata()
-    model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', options=run_options,
-                  run_metadata=run_metadata)
-    return model, run_metadata
-
-
-def train_model_epoch(model, train_x, train_y, test_x, test_y, n, start_idx):
-    # Prepend <START> to training responses
-    answers_in_train = np.hstack([
-        np.ones((len(train_x), 1), dtype='int32') * start_idx,
-        train_y[:, :-1]
-    ])
-    # We have to add an extra dimension for Keras' sparse_categorical_crossentropy
-    answers_out_train = train_y.reshape((len(train_x), MAX_LEN_INPUT, 1))
-
-    answers_in_test = np.hstack([
-        np.ones((len(test_x), 1), dtype='int32') * start_idx,
-        test_y[:, :-1]
-    ])
-    answers_out_test = test_y.reshape((len(test_x), MAX_LEN_INPUT, 1))
-
-    model.fit(
-        x=[train_x[:n], answers_in_train[:n]],
-        y=answers_out_train[:n],
-        epochs=1,
-        batch_size=BATCH_SIZE,
-    )
-
-    # Need to ensure our datasize for testing is evenly divisible by batch size.  This is 
-    # done by default for training size, but test size is smaller, so it must be done
-    # again.
-    test_n = BATCH_SIZE * int(min([len(test_x), n]) / BATCH_SIZE)
-    score = model.evaluate(
-        x=[test_x[:test_n], answers_in_test[:test_n]],
-        y=(answers_out_test[:test_n]),
-        batch_size=BATCH_SIZE,
-    )
-
-    print('\nValidation score:', score)
-
-
-def train_model(model, encoder, train_x, train_y, test_x, test_y):
-    start_idx = encoder.word_vocab[START]
-
-    test_input = [
-        "__romance When did you start drinking again?",
-        "__crime So you're from around here?",
-        "__thriller Oh god, what do we do?",
-        "__romance Do you love me?",
-    ]
-
-    try:
-        for epoch in range(MAX_EPOCHS):
-            print("Training epoch {}".format(epoch))
-            n = META_BATCH_SIZE
-
-            print("Evaluating test examples...")
-            for text in test_input:
-                print('> ', text)
-                print(decode_input_text(model, encoder, text))
-
-            train_model_epoch(model, train_x, train_y, test_x, test_y, n, start_idx)
-
-    except KeyboardInterrupt:
-        print("Caught keyboard interrupt, halting training...")
-        return model
-
-
-def decode_input_text(model, encoder, text):
-    """ Horrible hack of a function to test responses to arbitrary strings. Don't try this at home,
-        kids.
-    """
-    result_tokens = [encoder.word_vocab[START]]
-    for i in range(MAX_LEN_INPUT):
-        answer_vec = (result_tokens +
-                      [encoder.bpe_vocab[encoder.PAD]] * MAX_LEN_INPUT)[:MAX_LEN_INPUT]
-        input_vec = [encode_data(encoder, [text], is_input=True),
-                     np.array(answer_vec).reshape((1, MAX_LEN_INPUT))]
-        prediction = model.predict([np.vstack([vec]*BATCH_SIZE) 
-                                    for vec in input_vec])[0].reshape(MAX_LEN_INPUT, VOCAB_SIZE)
-        tokens = list(prediction.argmax(axis=1))
-        result_tokens.append(tokens[i])
-    return list(encoder.inverse_transform([result_tokens]))
+def get_model_response(model, encoder, text):
+    """ Encode text, evaluate model, return response """
 
 
 def train_test_split(develop_data):
